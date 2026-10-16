@@ -1,0 +1,12 @@
+PySide6==6.9.1
+pywinauto==0.6.9
+pywin32==310
+opencv-python==4.11.0.86
+numpy==2.2.6
+Pillow==11.2.1
+rapidfuzz==3.13.0
+rapidocr-onnxruntime==1.4.4
+onnxruntime==1.20.1
+pyautogui==0.9.54
+pytest==8.4.0
+PyInstaller==6.14.1

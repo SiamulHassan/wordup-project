@@ -1,0 +1,68 @@
+{
+  "wordup": {
+    "window_title_regex": ".*WordUp.*"
+  },
+  "ocr": {
+    "engine": "auto",
+    "minimum_confidence": 0.75,
+    "tesseract_cmd": ""
+  },
+  "purple_detection": {
+    "hue_min": 128,
+    "hue_max": 160,
+    "saturation_min": 105,
+    "value_min": 95,
+    "min_area_ratio": 0.0015,
+    "max_area_ratio": 0.04,
+    "min_aspect_ratio": 1.7,
+    "max_aspect_ratio": 6.0,
+    "min_fill_ratio": 0.72,
+    "morph_kernel": 5
+  },
+  "cyan_detection": {
+    "hue_min": 82,
+    "hue_max": 105,
+    "saturation_min": 80,
+    "value_min": 90
+  },
+  "white_detection": {
+    "saturation_max": 45,
+    "value_min": 170,
+    "value_max": 244,
+    "max_area_ratio": 0.08
+  },
+  "automation": {
+    "control_timeout": 8.0,
+    "search_timeout": 10.0,
+    "retry_count": 3,
+    "delay_between_words": 0.5,
+    "dry_run": true,
+    "fallback_confidence": 0.88,
+    "calibration": {
+      "search_icon": {
+        "x": 0.634,
+        "y": 0.074
+      },
+      "search_box": {
+        "x": 0.494,
+        "y": 0.135
+      },
+      "should_learn": {
+        "x": 0.268,
+        "y": 0.955
+      },
+      "back": {
+        "x": 0.086,
+        "y": 0.088
+      }
+    }
+  },
+  "logging": {
+    "level": "INFO",
+    "max_bytes": 2097152,
+    "backup_count": 4
+  },
+  "debug": {
+    "extraction": false
+  }
+}
