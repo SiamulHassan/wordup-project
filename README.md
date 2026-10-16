@@ -1,239 +1,243 @@
+<div align="center">
+
 # WordUp Vocabulary Importer
 
-A Windows 10/11 desktop utility that reads WordUp Knowledge Map screenshots, extracts only the
-purple **Should Learn** tiles, lets you review every OCR result, and safely transfers selected words
-through the visible WordUp Windows interface. Cyan **Already Know** tiles are measured and ignored.
+Turn Knowledge Map screenshots into a reviewed vocabulary list, then add words to WordUp through its desktop interface.
 
-The importer never edits WordUp files, databases, registry data, or binaries. It uses Windows UI
-Automation first and an isolated, window-relative keyboard/OCR fallback only where WordUp exposes
-custom-rendered controls.
+![Windows 10/11](https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?style=flat-square)
+![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square)
+![OCR: local](https://img.shields.io/badge/OCR-local-8B5CF6?style=flat-square)
 
-## Safety model
+[What's built](#whats-built) &middot; [Quick start](#quick-start) &middot; [Import workflow](#import-workflow) &middot; [Build](#build-the-exe) &middot; [Troubleshooting](#troubleshooting)
 
-Before a real action, all of these conditions must pass:
+</div>
 
-1. WordUp is the foreground window.
-2. The current screen contains an exact, normalized match for the requested headword.
-3. The detail screen exposes or visibly contains `Should Learn`.
-4. Exactly one safe target is identified.
+WordUp Vocabulary Importer is a Windows desktop app built with **PySide6**, **OpenCV**, and **RapidOCR**. It extracts words from screenshots, gives you an editable review table, and automates the **Should Learn** action in the Microsoft Store WordUp app.
 
-If any check fails, no action is clicked. `Already Know` is never used. A click whose effect cannot
-be observed is honestly recorded as `CLICKED_UNVERIFIED`.
+**Purple and white/light tiles are extracted. Cyan Already Know tiles are counted and ignored.** OCR runs locally, and the packaged EXE includes the OCR models without requiring Python or a separate Tesseract installation.
 
-## Requirements
+## What's built
 
-- Windows 10 or 11, x64
-- Python 3.11+ for development only
-- The Microsoft Store WordUp app open for inspection/import
-- A normal desktop session (automation cannot run on a locked desktop)
+| Area | Implemented features |
+| --- | --- |
+| Screenshot input | Add individual images or folders, or drag and drop PNG, JPG, JPEG, and WEBP files. |
+| Word extraction | Detect purple and white/light tiles, read them in row order, cache results, and merge duplicates across overlapping screenshots. |
+| Review table | Edit words inline; add, delete, filter, sort, select, or exclude entries. Low-confidence OCR results are highlighted for review. |
+| Word lists | Load and export TXT, CSV, and JSON lists, with source and confidence metadata where supported. |
+| WordUp automation | Connect to WordUp, inspect its UI, test one word, dry-run a batch, and import selected words using UI Automation with an OCR fallback. |
+| Session controls | Pause, resume, stop safely, retry failed words, and recover interrupted sessions from saved checkpoints. |
+| Reporting | Track per-word results and attempts, keep an append-only history, and export CSV reports. |
+| Diagnostics and packaging | Save masks, tile overlays, and OCR crops; calibrate fallback navigation; build a standalone Windows EXE. |
 
-The packaged EXE does not require Python. `rapidocr-onnxruntime` supplies local OCR without a
-separate Tesseract installation. The OCR adapter can also use a configured Tesseract executable.
+## Quick start
 
-## Development setup
+You need **Windows 10 or 11 (x64)** and the **Microsoft Store WordUp app**. Keep WordUp open in an unlocked desktop session during imports.
+
+### Run from source
+
+Install **Python 3.11+**, then run these commands from the project folder:
 
 ```powershell
 python -m venv .venv
-.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-python main.py
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe main.py
 ```
 
-Application data is saved below `%LOCALAPPDATA%\WordUpVocabularyImporter`:
+### Run a packaged build
 
-- `config.json` — user overrides and fallback calibration
-- `logs/wordup_importer.log` — rotating operational log
-- `logs/wordup_ui_tree.txt` — latest UIA inspection
-- `sessions/` — atomic resume checkpoints
-- `cache/` — screenshot-hash extraction cache
-- `debug/` — optional masks, overlays, crops, and OCR results
-- `history.jsonl` — append-only import history
+If you already have a built copy, launch `WordUpVocabularyImporter.exe`. Python is only needed to run from source or build the executable; see [Build the EXE](#build-the-exe).
 
-## Recommended first run
+## Import workflow
 
-1. Launch the importer.
-2. Add or drag Knowledge Map screenshots.
-3. Select **Analyze Screenshots**.
-4. Review every word; edit or deselect all amber low-confidence entries.
-5. Open WordUp and select **Connect**.
-6. Select **Inspect UI** to capture the actual UI Automation tree.
-7. Select one row and run **Test One Selected Word** with Dry Run enabled. The supplied narrow
-   WordUp layout is pre-calibrated.
-8. Only if navigation fails, open **Advanced → Fallback Calibration** and recapture the points.
-9. Dry-run a small group, then disable Dry Run and confirm the real import.
+1. **Add your screenshots.** Use **Add Screenshot(s)**, **Add Folder**, or drag and drop. You can also choose **Load TXT/CSV/JSON** to start with an existing word list.
+2. **Analyze and review.** Select **Analyze Screenshots**, check the extracted words, and edit or deselect every amber low-confidence entry. Remove anything you do not want to import.
+3. **Connect to WordUp.** Open WordUp, select **Connect**, then **Inspect UI** to save its current accessibility tree.
+4. **Test one word.** Leave **Dry Run** enabled, highlight one row, and select **Test One Selected Word**. This checks navigation and the word detail screen without clicking **Should Learn**.
+5. **Dry-run a small batch.** Check the **Import** boxes for your chosen words and select **Start Import**. Review the results before continuing.
+6. **Import the reviewed words.** Turn off **Dry Run**, select **Start Import**, and confirm the batch. Words verified during the dry run remain eligible for the real import.
 
-Screenshot processing and WordUp automation never start automatically after each other. Review is a
-mandatory stage.
+> **Dry Run is enabled by default.** Screenshot analysis and import are separate actions; analyzing images never starts an import.
 
-## Screenshot input and detection
+Default fallback coordinates are included for the reference narrow WordUp layout. If the one-word test cannot navigate, use **Advanced > Fallback Calibration** as described below.
 
-Use **Add Screenshot(s)**, **Add Folder**, drag-and-drop, **Remove Selected**, or **Clear All**.
-PNG, JPG, JPEG, and WEBP are supported. Multiple or overlapping screenshots are safe: results are
-deduplicated after OCR using Unicode-normalized, case-insensitive comparison while retaining all
-source filenames.
+## Safety and import controls
 
-The supplied reference screenshot has dominant tile colors near:
+The importer works through WordUp's visible interface. It uses **Windows UI Automation first**, with an isolated, window-relative keyboard and OCR fallback for custom-rendered controls. It does not edit WordUp's files, databases, registry data, or binaries.
 
-- purple: RGB `(176, 32, 248)`, OpenCV HSV hue approximately `140`
-- cyan: RGB `(48, 192, 208)`, OpenCV HSV hue approximately `93`
+Before clicking **Should Learn**, it checks that:
 
-Defaults in `config.json` allow compression and rendering variation around those values. The
-pipeline converts BGR to HSV, creates separate purple/cyan masks, closes small JPEG gaps, finds
-external contours, and filters by image-relative area, aspect ratio, and mask fill. These filters
-exclude navigation icons, tiny indicators, and the bottom `Range 601–700` markers. Purple crops are
-sorted by row and then left-to-right; OCR runs only on purple crops.
+- WordUp is the foreground window.
+- The detail screen contains an exact, normalized match for the requested word.
+- The **Should Learn** label is present.
+- Exactly one action target is identified.
 
-Enable **Save extraction debug images** before analyzing to write:
+A failed check prevents the action. The importer never selects **Already Know**, recognizes words already marked **Should Learn**, and records clicks without an observable result as `CLICKED_UNVERIFIED`.
+
+Use **Pause/Resume** or **Stop Safely** to control a running batch. **Retry Failed** processes only selected `NOT_FOUND`, `AMBIGUOUS`, or `FAILED` rows. **Mark Completed** and **Skip** let you resolve entries manually.
+
+**Emergency stop:** `Ctrl+Shift+Q` or `Esc` requests a stop while the importer has focus. PyAutoGUI's upper-left-corner fail-safe remains enabled for fallback actions. Progress is checkpointed after each processed word, and interrupted sessions are offered for review on the next launch.
+
+## Build the EXE
+
+Build on **Windows x64**. From the project folder, run:
+
+```powershell
+.\build.ps1
+```
+
+The script creates `.venv` if needed, installs dependencies, runs the tests, and invokes PyInstaller. The output is:
 
 ```text
-debug/<screenshot_hash>/
+dist/WordUpVocabularyImporter.exe
+```
+
+To package an already prepared environment directly:
+
+```powershell
+.\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean WordUpVocabularyImporter.spec
+```
+
+The [PyInstaller spec](WordUpVocabularyImporter.spec) bundles the default configuration and RapidOCR model data. PyInstaller builds for the host platform; use Windows to produce the Windows executable.
+
+## Development
+
+The code separates the desktop UI, extraction pipeline, automation, and persistence:
+
+```text
+app/           PySide6 interface, application controller, and shared state
+extraction/    Color masks, tile detection, preprocessing, OCR, and normalization
+automation/    WordUp connection, search, verification, and fallback controls
+storage/       Word lists, session checkpoints, history, and reports
+utils/         Configuration, logging, paths, and exceptions
+tests/         Unit and regression tests
+tools/         Extraction diagnostics and smoke-test helpers
+main.py        Application entry point
+config.json    Distributed defaults
+```
+
+Run the test suite in your virtual environment:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q
+```
+
+Tests cover color segmentation, white-tile preprocessing, tile filtering and reading order, normalization, deduplication, word-list formats, session persistence, GUI selection, window filtering, search navigation, and action verification. They use synthetic inputs and test doubles rather than automating the live WordUp app.
+
+Additional development tools are listed in [requirements-dev.txt](requirements-dev.txt). Private reference screenshots are not included in the repository.
+
+## Technical reference
+
+<details>
+<summary><strong>Extraction and word-list formats</strong></summary>
+
+OpenCV creates separate masks for purple, cyan, and white/light tile backgrounds. Contours are filtered by image-relative area, aspect ratio, and mask fill to reject small indicators and unrelated interface elements. Purple and white tiles are combined in reading order and passed to OCR; cyan tiles are excluded.
+
+Duplicates are merged using Unicode-normalized, case-insensitive comparison while retaining source filenames. Uncertain text is flagged rather than spell-corrected, preserving spaces, apostrophes, hyphens, and unusual vocabulary for review.
+
+| Format | Input | Export |
+| --- | --- | --- |
+| TXT | One word per line. | Selected words, one per line. |
+| CSV | Words from the first column; an optional `word`, `text`, or `vocabulary` header is recognized. | Selected words with confidence, source, and review status. |
+| JSON | A list, or an object containing a `words` list. Entries may be strings or objects with `word` or `text`. | Selected words with their stored metadata. |
+
+</details>
+
+<details>
+<summary><strong>Configuration and local data</strong></summary>
+
+[config.json](config.json) defines the window-title pattern, OCR settings, tile-detection thresholds, timeouts, retries, word delay, fallback coordinates, logging, and debug output. User overrides are saved under:
+
+```text
+%LOCALAPPDATA%/WordUpVocabularyImporter/
+  config.json                User overrides and fallback calibration
+  history.jsonl              Append-only import history
+  logs/wordup_importer.log    Rotating application log
+  logs/wordup_ui_tree.txt     Latest UI Automation inspection
+  sessions/                  Resume checkpoints
+  cache/                     Screenshot extraction cache
+  debug/                     Optional extraction artifacts
+  reports/                   Report directory
+```
+
+Use **Advanced > Show runtime paths** to find the current locations. Delete the user `config.json` to restore the distributed defaults.
+
+RapidOCR is the default local OCR backend. The optional Tesseract adapter requires both `pytesseract` and a Tesseract installation; these are not included in the standard dependencies.
+
+</details>
+
+<details>
+<summary><strong>UI inspection and fallback calibration</strong></summary>
+
+**Inspect UI** records control types, names, automation IDs, classes, rectangles, and availability. To inspect WordUp without launching the importer GUI:
+
+```powershell
+.\.venv\Scripts\python.exe inspect_wordup.py
+```
+
+Locators use runtime control names and types rather than assuming fixed automation IDs.
+
+If navigation fails, open **Advanced > Fallback Calibration**. Navigate WordUp to the relevant screen, select **Capture in 3 seconds**, then hover over the requested control. Each point is stored as a proportion of the WordUp window. Navigation uses the Search icon, search field, and Back points; the **Should Learn** click still requires live label detection and word verification.
+
+A changed WordUp layout or display scaling may require recalibration. Keep WordUp visible and unlocked; automation cannot operate through the lock screen or a disconnected desktop session.
+
+</details>
+
+<details>
+<summary><strong>Extraction diagnostics</strong></summary>
+
+Enable **Save extraction debug images** before analyzing screenshots to save:
+
+```text
+debug/<source_stem>_<hash_prefix>/
   original.png
   purple_mask.png
+  white_mask.png
   cyan_mask.png
   detected_tiles.png
   ocr_results.json
   crops/tile_001.png
 ```
 
-For segmentation-only diagnostics:
+For a purple/cyan segmentation check without OCR, run from the project folder:
 
 ```powershell
-python tools\analyze_tiles.py path\to\knowledge-map.jpg --output debug-output
+.\.venv\Scripts\python.exe -m tools.analyze_tiles path\to\knowledge-map.jpg --output debug-output
 ```
 
-## OCR review and word lists
+Use the GUI's extraction debug output to inspect white-tile detection as well. Review the overlay and masks before adjusting the color or geometry thresholds.
 
-The review table supports inline word editing, row deletion, manual additions, filtering, sorting,
-selection toggles, and duplicate removal. Low-confidence text, digits, and unsafe punctuation are
-flagged rather than spell-corrected. Legitimate spaces, apostrophes, hyphens, and unusual vocabulary
-are preserved.
+</details>
 
-Use **Load TXT/CSV/JSON** to bypass screenshots entirely. TXT uses one word per line; CSV reads the
-first column; JSON accepts either a list or `{ "words": [...] }`. Exports retain confidence, sources,
-and status where the format permits.
+<details>
+<summary><strong>Import results and reports</strong></summary>
 
-## WordUp connection and UI inspection
+| Result | Meaning |
+| --- | --- |
+| `PENDING` | Waiting to be processed. |
+| `UPDATED` | The action was clicked and a subsequent UI change was observed. |
+| `ALREADY_SHOULD_LEARN` | The word was recognized as already selected for learning. |
+| `CLICKED_UNVERIFIED` | A click occurred, but no confirming UI change was observed. |
+| `DRY_RUN_OK` | Navigation and detail verification passed without clicking the action. |
+| `NOT_FOUND` | No exact matching word was found. |
+| `AMBIGUOUS` | Multiple matching targets prevented a safe selection. |
+| `FAILED` | Processing failed; inspect the recorded error. |
+| `SKIPPED` | The entry was skipped. |
 
-The importer finds external top-level windows matching `.*WordUp.*` and excludes its own process.
-It connects through `pywinauto`'s UIA backend. **Bring to Front** verifies focus; **Inspect UI** logs
-each discovered control's type, name, automation ID, class, rectangle, enabled state, and visibility.
+History records include the timestamp, session ID, word, result, attempts, sources, confidence, and error. **Export Report** writes the current table's per-word results to CSV.
 
-The standalone diagnostic is useful before launching the GUI:
-
-```powershell
-python inspect_wordup.py
-```
-
-No automation ID is assumed in source. Locators combine runtime names and control types; IDs are
-recorded for diagnostics and can be adopted only after a real inspection proves stable.
-
-## Dry run, single-word test, and bulk import
-
-- **Dry Run** navigates, searches, selects an exact result, and verifies the detail headword without
-  clicking `Should Learn`.
-- **Test One Selected Word** exercises just one table row.
-- **Start Import** processes selected `PENDING` rows after explicit confirmation.
-- **Pause/Resume** blocks at safe checkpoints; **Stop Safely** ends at the next safe boundary.
-- `Ctrl+Shift+Q` and Escape request an emergency stop. PyAutoGUI's upper-left-corner fail-safe is
-  left enabled.
-- **Retry Failed** targets only selected `NOT_FOUND`, `AMBIGUOUS`, or `FAILED` rows.
-- **Mark Completed** and **Skip** provide manual resolution without restarting a session.
-
-Search and detail transitions use polling with configurable timeouts rather than fixed sleep chains.
-A failure is retried per word and never aborts the remaining queue. Progress is checkpointed after
-every completed word. On the next launch, an interrupted pending session is offered for review.
-
-## Controlled fallback calibration
-
-The distributed configuration contains relative points measured from the supplied narrow WordUp
-screenshots, so manual calibration is not part of the normal first run. The points only navigate to
-Search and focus its field; all consequential checks still use live OCR.
-
-If a WordUp redesign or different layout prevents the one-word dry run from navigating, open
-**Advanced → Fallback Calibration**. For each requested control, navigate WordUp to the relevant
-screen, select Capture, and hover the pointer over that control for three seconds. Coordinates are
-stored as proportions of the live WordUp window, not as absolute screen pixels.
-
-The fallback still requires OCR-based exact headword and button-label verification. Calibration does
-not weaken the four action safety conditions. Display scaling or a WordUp redesign may require
-recalibration.
-
-## Reports and statuses
-
-Every history record contains timestamp, word, result, attempts, sources, confidence, and error.
-Final CSV reports can be exported from the GUI. Results are:
-
-- `UPDATED`
-- `ALREADY_SHOULD_LEARN`
-- `CLICKED_UNVERIFIED`
-- `DRY_RUN_OK`
-- `NOT_FOUND`
-- `AMBIGUOUS`
-- `FAILED`
-- `SKIPPED`
-
-## Configuration
-
-`config.json` contains defaults for the title regex, OCR threshold/backend, HSV ranges, contour
-geometry, timeouts, retry count, word delay, fallback confidence, logging, and debug output. GUI
-settings persist as user overrides under Local AppData. Delete that user configuration to restore
-distributed defaults.
-
-## Testing
-
-Unit tests do not automate WordUp. They cover purple/cyan segmentation, tile filtering and reading
-order, conservative normalization, case-insensitive deduplication, portable word lists, and atomic
-session save/load.
-
-```powershell
-python -m pytest -q
-```
-
-To validate against a private reference screenshot, run `tools/analyze_tiles.py` and visually inspect
-the overlay. Screenshot fixtures are intentionally not distributed by default.
-
-## Building the standalone EXE
-
-Run:
-
-```powershell
-.\build.ps1
-```
-
-or manually:
-
-```powershell
-python -m PyInstaller --noconfirm --clean WordUpVocabularyImporter.spec
-```
-
-The output is `dist\WordUpVocabularyImporter.exe`. The spec collects RapidOCR's model data and
-submodules plus the default configuration. Build on Windows x64 for Windows x64; PyInstaller is not a
-cross-compiler.
+</details>
 
 ## Troubleshooting
 
-- **WordUp not detected:** open the Microsoft Store WordUp app and verify its title contains
-  `WordUp`; do not run either process elevated unless both use the same privilege level.
-- **Search is not found:** run UI inspection, review `wordup_ui_tree.txt`, then calibrate the search
-  icon/box if WordUp uses a custom canvas.
-- **OCR backend unavailable:** reinstall `requirements.txt`. In a packaged build, ensure antivirus
-  did not quarantine ONNX Runtime or model resources.
-- **Wrong/missing screenshot words:** enable extraction debug output. Tune HSV limits gradually and
-  verify cyan remains absent from the purple mask.
-- **Clicks are refused:** this is a safety outcome. Confirm focus, exact headword visibility, and an
-  unambiguous `Should Learn` label; inspect/recalibrate rather than disabling verification.
-- **Locked desktop or focus loss:** unlock the session and bring WordUp forward. Automation never
-  types into an unverified foreground application.
+| Problem | What to check |
+| --- | --- |
+| WordUp is not detected | Open the Microsoft Store app. Keep WordUp and the importer at the same privilege level. |
+| Search navigation fails | Run **Inspect UI**, check `logs/wordup_ui_tree.txt`, then recalibrate the fallback navigation points. |
+| OCR is unavailable | Reinstall `requirements.txt`. For packaged builds, check whether antivirus quarantined ONNX Runtime or model files. |
+| Words are missing or incorrect | Review the highlighted entries and enable extraction debug images. Inspect masks and overlays before tuning thresholds. |
+| An action is refused | Bring WordUp forward and check that the exact word and a single **Should Learn** target are visible. |
+| The result is `CLICKED_UNVERIFIED` | Check the word's state in WordUp before retrying; the click may have succeeded without an observable UI change. |
+| Automation stops after focus loss | Unlock the desktop and bring WordUp forward before retrying the affected entries. |
 
-## Known limitations
-
-- WordUp is external software and its accessibility tree can change. UI inspection and calibration
-  are therefore runtime steps, not hard-coded assumptions.
-- A click may be `CLICKED_UNVERIFIED` if WordUp exposes no observable semantic or visual state change.
-- OCR confidence is advisory and review remains mandatory.
-- Global emergency shortcuts are active while the importer has focus; PyAutoGUI's corner fail-safe
-  remains available during fallback actions.
-- The importer cannot operate through the Windows lock screen or a disconnected interactive session.
-#   w o r d u p - p r o j e c t  
- 
+WordUp's interface and accessibility tree can change between versions. OCR confidence is advisory, so review extracted words and verify the one-word dry run before a batch import.
